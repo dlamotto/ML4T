@@ -34,8 +34,9 @@ import pandas as pd
 from util import get_data, plot_data
 
 
-def author(self):
+def author():
     return 'dlamotto3'
+
 
 def compute_portvals(  		  	   		  		 		  		  		    	 		 		   		 		  
     orders_file="./orders/orders.csv",  		  	   		  		 		  		  		    	 		 		   		 		  
