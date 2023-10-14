@@ -69,6 +69,8 @@ def compute_portvals(
     # start date = first day in orders df, end date = last day in orders df
     start_date = orders_df.index[0]
     end_date = orders_df.index[-1]
+    # a date range for all days in that range
+    all_dates = pd.date_range(start=start_date, end=end_date)
     # gets the list of symbols that are in the order sheet
     symbols = orders_df['Symbol'].unique().tolist()
     # initialize a dictionary of shares with each symbol starting with 0 shares
@@ -76,42 +78,42 @@ def compute_portvals(
     # initialize our balance with our starting value (start_val)
     balance = start_val
     # get the prices for our date range and symbols and clean the data, the dates are the index
-    adjusted_closing_prices = get_data(symbols, pd.date_range(start_date, end_date))
-    adjusted_closing_prices.fillna(method="ffill", inplace=True)  # fill missing data forward
-    adjusted_closing_prices.fillna(method="bfill", inplace=True)  # fill missing data backward
+    adjusted_closing_prices = get_data(symbols, all_dates)
+    adjusted_closing_prices.ffill(inplace=True)  # fill missing data forward
+    # adjusted_closing_prices.bfill(inplace=True)  # fill missing data backward
 
     # initialize the empty dataframe to be returned
-    portvals = pd.DataFrame(columns=['Date', 'Balance'])
+    portvals = pd.DataFrame(index=adjusted_closing_prices.index, columns=['Balance'])
 
     # iterates through the orders dataframe
-    for index, row in orders_df.iterrows():
-        symbol = row['Symbol']
-        order_type = row['Order']
-        num_shares = row['Shares']
+    i = 0
+    for index in portvals.index:
+        # Check if the current date matches any in orders_df and that we haven't processed all orders
+        while i < len(orders_df) and index == orders_df.index[i]:
+            symbol = orders_df['Symbol'].iloc[i]
+            order_type = orders_df['Order'].iloc[i]
+            num_shares = orders_df['Shares'].iloc[i]
+            current_price = adjusted_closing_prices.loc[index, symbol]
 
-        # get the current price of the symbol on the given day
-        current_price = adjusted_closing_prices.loc[index, symbol]
-        # get the amount the market would impact the price
-        impacted_amount = current_price * impact
-
-        if symbol in shares:
             if order_type == 'BUY':
-                shares[symbol] += num_shares    # add the number of shares we are buying to our portfolio
-                # adjust the price of a share based on market impact of a buy
-                impacted_price = current_price + impacted_amount
-                price = num_shares * impacted_price     # the total price of all shares
-                balance -= price    # our cash amount minus the total price
-                balance -= commission   # our cash amount minus commission
+                shares[symbol] += num_shares  # add the number of shares we are buying to our portfolio
+                balance -= (1 + impact) * num_shares * current_price  # account for the market impact
+                balance -= commission  # cash amount minus commission
             else:
-                shares[symbol] -= num_shares     # add the number of shares we are selling from our portfolio
-                # adjust the price of a share based on market impact of a sell
-                impacted_price = current_price - impacted_amount
-                price = num_shares * impacted_price     # the total price of all shares
-                balance += price    # our cash amount plus the total price
-                balance -= commission   # our cash amount minus commission
+                shares[symbol] -= num_shares  # subtract the number of shares we are selling from our portfolio
+                balance -= (-1 + impact) * num_shares * current_price  # account for the market impact
+                balance -= commission  # cash amount minus commission
 
-        portvals.loc[index] = [index, balance]  # the value of our portfolio for each trading day
+            # move to the next row in orders
+            i += 1
 
+        # update the portfolio value based on our trades
+        portvals.loc[index] = balance
+        # update the portfolio value based on the prices in the market for each day there is no trade
+        total_value = sum(shares[key] * adjusted_closing_prices[key].loc[index] for key in shares)
+        portvals.loc[index] += total_value
+
+    #print(portvals)
     return portvals
 
   		  	   		  		 		  		  		    	 		 		   		 		  
@@ -123,8 +125,8 @@ def test_code():
     # note that during autograding his function will not be called.  		  	   		  		 		  		  		    	 		 		   		 		  
     # Define input parameters  		  	   		  		 		  		  		    	 		 		   		 		  
   		  	   		  		 		  		  		    	 		 		   		 		  
-    of = "./orders/orders-01.csv"
-    sv = 1000000  		  	   		  		 		  		  		    	 		 		   		 		  
+    of = "./orders/orders-09.csv"
+    sv = 1000000
   		  	   		  		 		  		  		    	 		 		   		 		  
     # Process orders  		  	   		  		 		  		  		    	 		 		   		 		  
     portvals = compute_portvals(orders_file=of, start_val=sv)
