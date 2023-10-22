@@ -40,10 +40,15 @@ def stats(portvals, portvals_benchmark):
     bm_std = bm_daily_ret.std()
     tos_mean = tos_daily_ret.mean()
     bm_mean = bm_daily_ret.mean()
-    print("Theoretically Optimal Strategy")
-    print(f"Cumulative Return: {tos_cum_ret}; STD: {tos_std}; Mean: {tos_mean}")
-    print("Benchmark")
-    print(f"Cumulative Return: {bm_cum_ret}; STD: {bm_std}; Mean: {bm_mean}")
+    line1 = "Theoretically Optimal Strategy"
+    line2 = f"Cumulative Return: {tos_cum_ret}; STD: {tos_std}; Mean: {tos_mean}"
+    line3 = "Benchmark"
+    line4 = f"Cumulative Return: {bm_cum_ret}; STD: {bm_std}; Mean: {bm_mean}"
+    data_lines = [line1, line2, line3, line4]
+
+    with open('p6_results.txt', 'w') as file:
+        for line in data_lines:
+            file.write(line + '\n')
 
 
 def testPolicy(symbol, sd, ed, sv):
