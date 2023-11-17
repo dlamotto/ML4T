@@ -42,7 +42,6 @@ class Indicators:
         plt.plot(self.normal_prices, label="Normalized Price")
         plt.plot(self.upper_bb, label="Upper band")
         plt.plot(self.lower_bb, label="Lower band")
-        plt.plot(self.b_index, label="BB Value")
         plt.xlabel("Date")
         plt.ylabel("Normalized Prices")
         plt.legend(loc='best')
