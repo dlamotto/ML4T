@@ -47,65 +47,38 @@ def compute_portvals(dataframe=None,start_val=1000000,commission=9.95,impact=0.0
     :rtype: pandas.DataFrame
     """
 
-    # start date = first day in orders df, end date = last day in orders df
-    sd = dataframe.index[0]
-    ed = dataframe.index[-1]
-    # a date range for all days in that range
-    all_dates = pd.date_range(start=sd, end=ed)
-
-    # get the prices for our date range and symbols and clean the data, the dates are the index
-    portvals = get_data(['SPY'], all_dates, addSPY=True, colname = 'Adj Close')
-    portvals = portvals.rename(columns={'SPY': 'value'})
-
-    # gets the list of symbols that are in the order sheet
+    # Get the start and end dates for all the orders
+    start_date = dataframe.index.min()
+    end_date = dataframe.index.max()
     symbol = dataframe.columns[0]
 
-    balance = start_val
-    portfolio = {}  # symbol (str) -> number (int)
-    symbols = {}  # symbol (str) -> prices (pd.df)
+    # Get prices dataframe with [date, symbols, cash]
+    prices = get_data([symbol], pd.date_range(start_date, end_date))
+    prices = prices[[symbol]].fillna(method='ffill').fillna(method='bfill')
+    prices['Cash'] = 1.0
 
+    # Initialize trades DataFrame
+    trades = pd.DataFrame(0, index=prices.index, columns=prices.columns)
 
-    # Iterate through the portvals dataframe
-    for index in portvals.index:
-        trade = dataframe.loc[index].loc[symbol]
-        if trade != 0:
-            if trade < 0:
-                order = 'SELL'
-                shares = abs(trade)
-            else:
-                order = 'BUY'
-                shares = trade
+    # Populate trades DataFrame
+    for i, row in dataframe.iterrows():
+        shares = row[symbol]
+        trade_val = shares * prices.loc[i, symbol]
+        if shares > 0:  # buy
+            trades.loc[i, symbol] += abs(shares)
+            trades.loc[i, 'Cash'] -= (trade_val * (1 + impact) + commission)
+        elif shares < 0:  # sell
+            trades.loc[i, symbol] -= abs(shares)
+            trades.loc[i, 'Cash'] += (trade_val * (1 - impact) - commission)
 
-            symbols = get_sym_data(symbol, symbols, index, ed)
-            balance, portfolio = calculate(symbol, order, shares, balance, portfolio, symbols, index, commission, impact)
-        val = 0
-        for symbol in portfolio:
-            val += symbols[symbol].loc[index].loc[symbol] * portfolio[symbol]
-        portvals.loc[index].loc['value'] = balance + val
+    # Calculate holdings
+    holdings = trades.cumsum()
+    holdings['Cash'] += start_val  # Add starting cash value
+
+    # Calculate portfolio values
+    portvals = (holdings * prices).sum(axis=1)
 
     return portvals
-
-
-def get_sym_data(symbol, symbols, index, ed):
-    if symbol not in symbols:
-        symbols_df = get_data([symbol], pd.date_range(index, ed), addSPY=True, colname='Adj Close')
-        symbols_df.ffill().bfill()
-        symbols[symbol] = symbols_df
-    return symbols
-
-
-def calculate(symbol, order, shares, balance, portfolio, symbols, index, impact, commission):
-    if order == 'BUY':
-        portfolio_delta = shares
-        balance_delta = -symbols[symbol].loc[index].loc[symbol] * (1 + impact) * shares
-    elif order == 'SELL':
-        portfolio_delta = -shares
-        balance_delta = symbols[symbol].loc[index].loc[symbol] * (1 - impact) * shares
-
-    portfolio[symbol] = portfolio.get(symbol, 0) + portfolio_delta
-    balance += balance_delta - commission
-
-    return balance, portfolio
 
 
 def author():

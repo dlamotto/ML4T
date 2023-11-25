@@ -62,5 +62,6 @@ class BagLearner:
 
         predictions = np.array(all_predictions)
         # predictions get averaged column-wise to get a single prediction value
+
         return predictions.mean(axis=0)
 

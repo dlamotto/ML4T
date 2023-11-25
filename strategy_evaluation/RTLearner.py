@@ -1,6 +1,6 @@
 import numpy as np
 class RTLearner:
-    def __init__(self, leaf_size=1, verbose=False):
+    def __init__(self, leaf_size=5, verbose=False):
         """
         Constructor:
         leaf_size: the maximum number of samples to be aggregated at a leaf (aka max # of samples reqired to split
