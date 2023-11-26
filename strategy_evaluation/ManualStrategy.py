@@ -1,172 +1,176 @@
+import pandas as pd
 import datetime as dt
 from util import get_data
-import pandas as pd
-from pandas.plotting import register_matplotlib_converters
-import numpy as np
-import matplotlib.pyplot as plt
-from indicators import *
 from marketsimcode import compute_portvals
-
-def testPolicy(symbol='JPM', sd=dt.datetime(2008, 1, 1), ed=dt.datetime(2009, 12, 31), sv=100000):
-    # sym = [symbol]
-    all_prices = get_data(symbol, pd.date_range(sd, ed)).fillna(method='ffill').fillna(method='bfill')
-    prices = all_prices[symbol]
-
-    df_trades = prices.copy()
-    df_trades.iloc[:] = 0
-    lookback = 10
-
-    # Calculate indicators
-    sma = compute_sma(prices, lookback)
-    sma_price_ratio = prices / sma
-    bbp = compute_bb(prices, lookback)
-    momentum = compute_momentum(prices, lookback)
-
-    holding = 0
-    for i in range(lookback - 1, len(prices) - 1):
-        # Simplify condition checks using direct scalar comparison
-        is_oversold = bbp.iloc[i] < 0 and sma_price_ratio.iloc[i] < 0.95
-        is_overbought = bbp.iloc[i] > 1 and sma_price_ratio.iloc[i] > 1.05
-        is_momentum_positive = momentum.iloc[i] > 0
-        is_momentum_negative = momentum.iloc[i] < 0
-
-        # Check for buy or sell conditions
-        if (is_oversold or (is_momentum_positive and sma_price_ratio.iloc[i] < 0.95) or (
-                is_momentum_positive and bbp.iloc[i] < 0)) and holding <= 0:
-            trade_amount = 2000 if holding == -1000 else 1000
-            holding += trade_amount
-            df_trades.iloc[i] = trade_amount
-        elif (is_overbought or (is_momentum_negative and sma_price_ratio.iloc[i] > 1.05) or (
-                is_overbought and is_momentum_negative)) and holding >= 0:
-            trade_amount = -2000 if holding == 1000 else -1000
-            holding += trade_amount
-            df_trades.iloc[i] = trade_amount
-    return df_trades
-
-def plot_ManualStrategy(symbol, sd, ed, sv, verbose):
-    register_matplotlib_converters()
-    #manual strategy in-sample
-    df_trades = testPolicy(symbol=symbol, sd=dt.datetime(2008, 1, 1), ed=dt.datetime(2009, 12, 31), sv=100000)
-    optimal_portvals = compute_portvals(df_trades, start_val=100000, commission=9.95, impact=0.005)
-    #statistics
-    portfolio_cum_return = optimal_portvals[-1] / optimal_portvals[0] - 1
-    daily_returns = optimal_portvals / optimal_portvals.shift(1) - 1
-    portfolio_mean = daily_returns.mean()
-    portfolio_std = daily_returns.std()
-
-
-    # manual strategy out-sample
-    outSample_df = testPolicy(symbol=symbol, sd=sd, ed=ed, sv=100000)
-    outsample_portvals = compute_portvals(outSample_df, start_val=100000, commission=9.95, impact=0.005)
-
-    #statistics
-    outsample_cum_return = outsample_portvals[-1] / outsample_portvals[0] - 1
-    outsample_dr = outsample_portvals / outsample_portvals.shift(1) - 1
-    outsample_mean = outsample_dr.mean()
-    outsample_std = outsample_dr.std()
-
-    # benchmark in-sample
-    benchmark_df = df_trades.copy()
-    benchmark_df.iloc[:, 0] = 0
-    benchmark_df.iloc[0, 0] = 1000
-    portvals_benchmark = compute_portvals(benchmark_df, start_val=100000, commission=9.95, impact=0.005)
-    #statistics
-    benchmark_cum_return = portvals_benchmark[-1] / portvals_benchmark[0] - 1
-    benchmark_daily_return = portvals_benchmark / portvals_benchmark.shift(1) - 1
-    benchmark_mean = benchmark_daily_return.mean()
-    benchmark_std = benchmark_daily_return.std()
-
-    #benchmark out-sample
-    benchmark_outsample_df = outSample_df.copy()
-    benchmark_outsample_df.iloc[:, 0] = 0
-    benchmark_outsample_df.iloc[0, 0] = 1000
-    benchmark_oustample_portvals = compute_portvals(benchmark_outsample_df, start_val=100000, commission=9.95,
-                                                       impact=0.005)
-    #statistics
-    bechmark_outsample_cum_return = benchmark_oustample_portvals[-1] / benchmark_oustample_portvals[0] - 1
-    benchmark_oustample_dr = benchmark_oustample_portvals / benchmark_oustample_portvals.shift(1) - 1
-    benchmark_oustample_dr_avg = benchmark_oustample_dr.mean()
-    benchmark_oustample_dr_std = benchmark_oustample_dr.std()
-
-    #normalized prices
-    normalized_optim_pvals = optimal_portvals / optimal_portvals[0]
-    normalized_optim_benchmark_pvals = portvals_benchmark / portvals_benchmark[0]
-    normalized_outsample_portvals = outsample_portvals / outsample_portvals[0]
-    normalized_banchmark_outsample = benchmark_oustample_portvals / benchmark_oustample_portvals[0]
-
-    if verbose:
-        print('cumulative return of benchmark in-sample', round(benchmark_cum_return, 4))
-        print('cumulative return of Manual strategy in-sample', round(portfolio_cum_return, 4))
-        print('standard deviation of benchmark daily returns in-sample', round(benchmark_std, 4))
-        print('standard deviation of Manual Strategy daily returns in-sample', round(portfolio_std, 4))
-        print('mean of benchmark daily returns in-sample', round(benchmark_mean, 4))
-        print('mean of manual strategy daily returns in-sample', round(portfolio_mean, 4))
-
-        print('cumulative return of benchmark out-sample', round(bechmark_outsample_cum_return, 4))
-        print('cumulative return of manual strategy out-sample', round(outsample_cum_return, 4))
-        print('standard deviation of benchmark daily returns out-sample', round(benchmark_oustample_dr_std, 4))
-        print('standard deviation of manual strategy daily returns out-sample', round(outsample_std, 4))
-        print('mean of benchmark daily returns out-sample', round(benchmark_oustample_dr_avg, 4))
-        print('mean daily returns for manual strategy out-sample', round(outsample_mean, 4))
-
-    fig1, ax = plt.subplots()
-    ax.plot(normalized_optim_benchmark_pvals, color="g", label="benchmark")
-    ax.plot(normalized_optim_pvals, color="r", label="Manual strategy in-sample")
-    for i in range(len(df_trades)):
-        if df_trades.iloc[i, 0] < 0:  # SHORT
-            ax.axvline(df_trades.index[i], color='black')
-        elif df_trades.iloc[i, 0] > 0:
-            ax.axvline(df_trades.index[i], color='blue')
-    ax.legend()
-    plt.xlabel("Date")
-    plt.ylabel("Normalized portfolio value")
-    plt.title("Normalized portfolio value, manual strategy vs benchmark, in-sample")
-    plt.xticks(fontsize=7)
-    # plt.show()
-    fig1.savefig('manual1.png')
-
-    fig2, ax = plt.subplots()
-    ax.plot(normalized_banchmark_outsample, color="g", label="benchmark")
-    ax.plot(normalized_outsample_portvals, color="r", label="Manual strategy out-sample")
-    for i in range(len(outSample_df)):
-        if outSample_df.iloc[i, 0] < 0:  # SHORT
-            ax.axvline(outSample_df.index[i], color='black')
-        elif outSample_df.iloc[i, 0] > 0:
-            ax.axvline(outSample_df.index[i], color='blue')
-    ax.legend()
-    plt.xlabel("Date")
-    plt.ylabel("Normalized portfolio value")
-    plt.title("Normalized portfolio value, manual strategy vs benchmark, out-sample")
-    plt.xticks(fontsize=7)
-    fig2.savefig('manual2.png')
-
-    fig3, ax = plt.subplots()
-    ax.plot(normalized_banchmark_outsample, color="g", label="benchmark out-sample")
-    ax.plot(normalized_optim_benchmark_pvals, color="g", label="benchmark in-sample")
-    ax.plot(normalized_optim_pvals, color="r", label="Manual strategy in-sample")
-    ax.plot(normalized_outsample_portvals, color="r", label="Manual strategy out-sample")
-    ax.legend()
-    plt.xlabel("Date")
-    plt.ylabel("Normalized portfolio value")
-    plt.title("Normalized portfolio value, manual strategy vs benchmark, out-sample")
-    plt.xticks(fontsize=7)
-    fig3.savefig('manual3.png')
+from indicators import *
+import matplotlib.pyplot as plt
+from pandas.plotting import register_matplotlib_converters
 def author():
     return 'dlamotto3'
 
+def testPolicy(symbol, sd, ed, sv):
+    # initializing dataframe w/ symbol
+    # print(symbol)
+    df = get_data(symbol, pd.date_range(sd, ed))
+    df_price = df[symbol].ffill().bfill()
+    # normalized dataframe
+    normalized_df = df_price / df_price.iloc[0]
+
+    df_trades = df[['SPY']]
+    symbol_str = symbol[0]
+    df_trades = df_trades.rename(columns={'SPY': symbol_str}).astype({symbol_str: 'int32'})
+    df_trades[:] = 0
+    # date range
+    dates = df_trades.index
+
+    # getting indicators
+    sma = compute_sma(sd, ed, symbol, 20)[symbol]
+    bbp = compute_bbp(sd, ed, symbol, 20)[symbol]
+    momentum = compute_momentum(sd, ed, symbol, 20)[symbol]
+
+    # track moves within the market
+    position = 0
+    last_action = 0
+
+    # making trades
+    for i in range(len(dates)):
+        current_date = dates[i]
+        last_action += 1
+
+        # votes based where price lies based on indicator
+        sma_flag = 1 if normalized_df.loc[current_date, symbol_str] > sma.loc[current_date, symbol_str] else -1 if\
+            normalized_df.loc[current_date, symbol_str] < sma.loc[current_date, symbol_str] else 0
+        bbp_flag = 1 if bbp.loc[current_date, symbol_str] < 0 else -1 if bbp.loc[current_date, symbol_str] > 1 else 0
+        momentum_flag = 1 if momentum.loc[current_date, symbol_str] > 0 else -1 if momentum.loc[current_date, symbol_str] < 0 else 0
+
+        # determine the trade action
+        flag = sma_flag + bbp_flag + momentum_flag
+        action = (1000 if flag >= 2 else -1000 if flag <= -2 else 0) - position
+        # only execute trading action if last action was 3 or more days ago
+        if last_action >= 3:
+            df_trades.at[dates[i], symbol] = action
+            position += action
+            last_action = 0
+
+    return df_trades
+
+
+def benchmark(sd, ed, sv):
+    df_bm = get_data(['SPY'], pd.date_range(sd, ed))
+    df_bm = df_bm.rename(columns={'SPY': 'JPM'}).astype({'JPM': 'int32'})
+    df_bm[:] = 0
+    df_bm.loc[df_bm.index[0]] = 1000
+    portvals_bm = compute_portvals(df_bm, sv, 9.95, 0.005)
+    return portvals_bm
+
+
+def stats(bm, msp):
+    bm, msp = bm['value'], msp['value']
+
+    # cumm return
+    cr_bm = bm[-1] / bm[0] - 1
+    cr_msp = msp[-1] / msp[0] - 1
+
+    # dailys return in percentage
+    dr_bm = (bm / bm.shift(1) - 1).iloc[1:]
+    dr_msp = (msp / msp.shift(1) - 1).iloc[1:]
+
+    # std of daily returns
+    sddr_bm = dr_bm.std()
+    sddr_msp = dr_msp.std()
+
+    # mean of daily returns
+    adr_bm = dr_bm.mean()
+    adr_msp = dr_msp.mean()
+
+    print("Manual Strategy")
+    print("Cum return: " + str(cr_msp))
+    print("Stdev of daily returns: " + str(sddr_msp))
+    print("Mean of daily returns: " + str(adr_msp))
+    print("\n")
+    print("\n")
+    print("Benchmark")
+    print("Cum return: " + str(cr_bm))
+    print("Stdev of daily returns: " + str(sddr_bm))
+    print("Mean of daily returns: " + str(adr_bm))
+
+
+def graphs(benchmark_portvals, theoretical_portvals, short, long, label):
+    register_matplotlib_converters()
+    # normalize
+    benchmark_portvals['value'] = benchmark_portvals['value'] / benchmark_portvals['value'][0]
+    theoretical_portvals['value'] = theoretical_portvals['value'] / theoretical_portvals['value'][0]
+
+    plt.figure()
+    plt.title("Manual Strategy " + label)
+    plt.xticks(rotation=25)
+    plt.plot(benchmark_portvals, label="benchmark", color="purple")
+    plt.plot(theoretical_portvals, label="manual", color="red")
+
+    for date in set(short + long):
+        color = "black" if date in short else "blue"
+        plt.axvline(date, color=color)
+
+    plt.legend()
+    plt.savefig("images/manual_{}.png".format(label))
+
+
+def plot_long_short(symbol, df_trades):
+    long = []
+    short = []
+    current = 0
+    last_action = 'OUT'
+    for date in df_trades.index:
+        current += df_trades.loc[date, symbol]
+        if current < 0:
+            if last_action == 'OUT' or last_action == 'LONG':
+                last_action = 'SHORT'
+                short.append(date)
+        elif current > 0:
+            if last_action == 'OUT' or last_action == 'SHORT':
+                last_action = 'LONG'
+                long.append(date)
+        else:
+            last_action = 'OUT'
+
+    return short, long
+
+
+def report_ms():
+    # in-sample data
+    sv_is = 100000
+    sd_is = dt.datetime(2008, 1, 1)
+    ed_is = dt.datetime(2009, 12, 31)
+    symbol_is = ['JPM']
+    # get theoretical in-sample portfolio
+    df_trades_is = testPolicy(symbol_is, sd=sd_is, ed=ed_is, sv=sv_is)
+    manual_portvals_is = compute_portvals(df_trades_is, sv_is, commission=9.95, impact=0.005)
+    # get benchmark performance; in-sample
+    benchmark_portvals_is = benchmark(sd_is, ed_is, sv_is)
+
+    # plot in-sample data period
+    short, long = plot_long_short(symbol_is[0], df_trades_is)
+    graphs(benchmark_portvals_is, manual_portvals_is, short, long, 'in_sample')
+
+    # out-of-sample data
+    sv_oos = 100000
+    sd_oos = dt.datetime(2010, 1, 1)
+    ed_oos = dt.datetime(2011, 12, 31)
+    symbol_oos = ['JPM']
+    # get theoretical out-of-sample portfolio
+    df_trades_oos = testPolicy(symbol_oos, sd=sd_oos, ed=ed_oos, sv=sv_oos)
+    manual_portvals_oos = compute_portvals(df_trades_oos, sv_oos, commission=9.95, impact=0.005)
+    # get benchmark performance; out-of-sample
+    benchmark_portvals_oos = benchmark(sd_oos, ed_oos, sv_oos)
+
+    # plot out-of-sample period
+    short, long = plot_long_short(symbol_oos[0], df_trades_oos)
+    graphs(benchmark_portvals_oos, manual_portvals_oos, short, long, 'out_sample')
+
+    # print Cumulative return, STDEV of daily returns, and Mean of daily returns
+    # of the benchmark and Manual Strategy portfolio
+    stats(benchmark_portvals_is, manual_portvals_is)
+
 
 if __name__ == "__main__":
-    sd = dt.datetime(2010, 1, 1)
-    ed = dt.datetime(2011, 12, 31)
-    symbol = ['JPM']
-    dates = pd.date_range(sd, ed)
-    #prices = get_data([symbol], dates)
-    #prices = prices['JPM']
-    # trade portfolio
-    df_trades = testPolicy(symbol=symbol, sd=dt.datetime(2010, 1, 1), ed=dt.datetime(2011,12,31), sv = 100000)
-    portvals = compute_portvals(df_trades, 100000, 9.95, 0.005)
-    print(df_trades)
-    print(portvals)
-    plot_ManualStrategy(symbol, sd, ed, 100000, True)
-
-
+   report_ms()

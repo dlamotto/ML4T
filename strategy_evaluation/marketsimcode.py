@@ -31,55 +31,81 @@ import pandas as pd
 from util import get_data
 
 
-def compute_portvals(dataframe=None,start_val=1000000,commission=9.95,impact=0.005):
+def author():
+    return 'dlamotto3'
+
+
+def compute_portvals(orders_df, start_val=1000000, commission=9.95, impact=0.005):
     """
-    Computes the portfolio values.
+       Computes the portfolio values.
 
-    :param dataframe: Thdataframe
-    :type pd.dataframe
-    :param start_val: The starting value of the portfolio
-    :type start_val: int
-    :param commission: The fixed amount in dollars charged for each transaction (both entry and exit)
-    :type commission: float
-    :param impact: The amount the price moves against the trader compared to the historical data at each transaction
-    :type impact: float
-    :return: the result (portvals) as a single-column dataframe, containing the value of the portfolio for each trading day in the first column from start_date to end_date, inclusive.
-    :rtype: pandas.DataFrame
-    """
+       :param dataframe: Thdataframe
+       :type pd.dataframe
+       :param start_val: The starting value of the portfolio
+       :type start_val: int
+       :param commission: The fixed amount in dollars charged for each transaction (both entry and exit)
+       :type commission: float
+       :param impact: The amount the price moves against the trader compared to the historical data at each transaction
+       :type impact: float
+       :return: the result (portvals) as a single-column dataframe, containing the value of the portfolio for each trading day in the first column from start_date to end_date, inclusive.
+       :rtype: pandas.DataFrame
+       """
+    sd = orders_df.index[0]
+    ed = orders_df.index[-1]
+    portvals = get_data(['SPY'], pd.date_range(sd, ed), addSPY=True, colname='Adj Close')
+    portvals = portvals.rename(columns={'SPY': 'value'})
+    dates = portvals.index
+    symbol = orders_df.columns[0]
 
-    # Get the start and end dates for all the orders
-    start_date = dataframe.index.min()
-    end_date = dataframe.index.max()
-    symbol = dataframe.columns[0]
+    ##### my account
+    balance = start_val
+    portfolio = {}
+    symbols = {}
 
-    # Get prices dataframe with [date, symbols, cash]
-    prices = get_data([symbol], pd.date_range(start_date, end_date))
-    prices = prices[[symbol]].fillna(method='ffill').fillna(method='bfill')
-    prices['Cash'] = 1.0
+    for date in dates:
+        trade = orders_df.loc[date, symbol]
 
-    # Initialize trades DataFrame
-    trades = pd.DataFrame(0, index=prices.index, columns=prices.columns)
+        if trade != 0:
+            order = 'SELL' if trade < 0 else 'BUY'
+            shares = abs(trade)
 
-    # Populate trades DataFrame
-    for i, row in dataframe.iterrows():
-        shares = row[symbol]
-        trade_val = shares * prices.loc[i, symbol]
-        if shares > 0:  # buy
-            trades.loc[i, symbol] += abs(shares)
-            trades.loc[i, 'Cash'] -= (trade_val * (1 + impact) + commission)
-        elif shares < 0:  # sell
-            trades.loc[i, symbol] -= abs(shares)
-            trades.loc[i, 'Cash'] += (trade_val * (1 - impact) - commission)
+            balance, portfolio, symbols = calculate(
+                symbol, order, shares, balance, portfolio,
+                symbols, date, ed, commission, impact
+            )
 
-    # Calculate holdings
-    holdings = trades.cumsum()
-    holdings['Cash'] += start_val  # Add starting cash value
-
-    # Calculate portfolio values
-    portvals = (holdings * prices).sum(axis=1)
+        ### calculating current protfolio value
+        portvals.at[date, 'value'] = compute_portval(date, balance, portfolio, symbols)
 
     return portvals
 
 
-def author():
-    return 'dlamotto3'
+# update current_cash and shares_owned from an order
+def calculate(symbol, order, shares, balance, portfolio, symbols, current_date, end_date, commission,
+                      impact):
+    # get symbol data into symbol_table if not already there
+    symbols.setdefault(symbol, get_data([symbol], pd.date_range(current_date, end_date), addSPY=True,
+                                             colname='Adj Close').ffill().bfill())
+    portfolio_delta = 0
+    balance_delta = 0
+    # update the share and cash information
+    if order == 'BUY':
+        portfolio_delta = shares
+        balance_delta = -symbols[symbol].loc[current_date].loc[symbol] * (1 + impact) * shares
+    elif order == 'SELL':
+        portfolio_delta = -shares
+        balance_delta = symbols[symbol].loc[current_date].loc[symbol] * (1 - impact) * shares
+
+    portfolio[symbol] = portfolio.get(symbol, 0) + portfolio_delta
+    balance += balance_delta - commission
+
+    return balance, portfolio, symbols
+
+
+# compute the portfolio value for a day
+def compute_portval(curr_date, current_cash, shares_owned, symbol_table):
+    shares_worth = 0
+    for symbol in shares_owned:
+        shares_worth += symbol_table[symbol].loc[curr_date].loc[symbol] * shares_owned[symbol]
+    return current_cash + shares_worth
+
